@@ -10,13 +10,14 @@ import Foundation
 import ArgumentParser
 import PrismCore
 import Yams
-import struct ZeplinAPI.Project
+import ZeplinAPI
 
 // MARK: - Generate command
 struct Generate: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "generate",
-        abstract: "Generate text style and colors definitions from a set of templates and store the resulting output to the provided paths"
+        abstract: "Generate text style and colors definitions from a set of templates and store the resulting output to the provided paths",
+        subcommands: [GenerateAssetCatalog.self]
     )
     
     @Option(name: .shortAndLong, help: "Zeplin Project ID to generate text styles and colors from. Overrides any config files.")
@@ -34,46 +35,23 @@ struct Generate: ParsableCommand {
     private let prismFolder = ".prism"
 
     func run() throws {
-        var configPath = configFile
-
-        let defaultConfigPath = "\(prismFolder)/config.yml"
-        let hasDefaultConfig = FileManager.default.fileExists(atPath: defaultConfigPath)
-        if configPath == nil && hasDefaultConfig {
-            configPath = defaultConfigPath
-        }
-
-        // Configuration
-        var config: Configuration?
-        if let configPath = configPath {
-            guard let configData = FileManager.default.contents(atPath: configPath),
-                  let configString = String(data: configData, encoding: .utf8) else {
-                throw CommandError.missingConfigurationFile(path: configPath)
-            }
-
-            let decoder = YAMLDecoder()
-            
-            do {
-                config = try decoder.decode(Configuration.self, from: configString)
-            } catch {
-                throw CommandError.invalidConfiguration(path: configPath)
-            }
-        }
+        let config = try Configuration(path: configFile)
 
         guard let jwtToken = ProcessInfo.processInfo.environment["ZEPLIN_TOKEN"] else {
             throw CommandError.missingToken
         }
         
-        guard let projectId = projectId ?? config?.projectId else {
+        guard let projectId = projectId ?? config.projectId else {
             throw CommandError.missingProjectID
         }
 
         let prism = Prism(jwtToken: jwtToken)
         let sema = DispatchSemaphore(value: 0)
 
-        let rawTemplatesPath = templatesPath ?? config?.templatesPath ?? prismFolder
+        let rawTemplatesPath = templatesPath ?? config.templatesPath ?? prismFolder
         let templatesPath = rawTemplatesPath == "/" ? String(rawTemplatesPath.dropLast()) : rawTemplatesPath
         
-        guard let rawOutputPath = outputPath ?? config?.outputPath else {
+        guard let rawOutputPath = outputPath ?? config.outputPath else {
             throw CommandError.outputFolderMissing
         }
 
